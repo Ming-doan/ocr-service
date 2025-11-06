@@ -1,0 +1,61 @@
+name: ocr_service
+
+volumes:
+  minio_data:
+  ocr_model:
+
+services:
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    volumes:
+      - minio_data:/data
+    ports:
+      - 9000:9000
+      - 9001:9001
+    command: server --console-address ":9001" /data
+
+  ocr:
+    image: vllm/vllm-openai:latest
+    container_name: ocr
+    volumes:
+      - ocr_model:/root/.cache/huggingface
+    ports:
+      - 4377:4377
+    command: 
+      - '--model'
+      - 'rednote-hilab/dots.ocr'
+      - '--trust-remote-code'
+      - '--async-scheduling'
+      - '--gpu-memory-utilization'
+      - '0.90'
+      - '--host'
+      - '0.0.0.0'
+      - '--port'
+      - '4377'
+    # Container resource
+    ipc: host
+    shm_size: 32gb
+    mem_limit: 32gb
+    runtime: nvidia
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  api:
+    build: .
+    image: api_image
+    container_name: api
+    environment:
+      - MINIO_ENDPOINT=minio:9000
+      - OCR_LLM_ENDPOINT=http://ocr:4377/v1
+      - MINIO_DOWNLOAD_URL=http://localhost:9000
+    ports:
+      - 8000:8000
+    depends_on:
+      - minio
+      - ocr

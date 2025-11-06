@@ -1,0 +1,23 @@
+[project]
+name = "ocr-service"
+version = "0.1.0"
+description = ""
+authors = []
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "redis (>=7.0.1,<8.0.0)",
+    "minio (>=7.2.18,<8.0.0)",
+    "openai (>=2.7.1,<3.0.0)",
+    "pymupdf (>=1.26.6,<2.0.0)",
+    "fastapi (>=0.121.0,<0.122.0)",
+    "uvicorn (>=0.38.0,<0.39.0)",
+    "pillow (>=12.0.0,<13.0.0)",
+    "python-multipart (>=0.0.20,<0.0.21)",
+    "nltk (>=3.9.2,<4.0.0)",
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
