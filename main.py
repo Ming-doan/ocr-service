@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from core.interfaces.api_interface import ApiResponse
 from services.ocr.router import router as ocr_router
@@ -17,6 +18,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.mount("/static", StaticFiles(directory="tmp/ocr_service"), name="static")
 
 app.include_router(ocr_router, prefix="/api/ocr", tags=["OCR"])
 app.include_router(pdf_extractor_router, prefix="/api/pdf", tags=["PDF Extractor"])

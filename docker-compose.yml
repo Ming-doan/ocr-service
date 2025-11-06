@@ -18,6 +18,8 @@ services:
   ocr:
     image: vllm/vllm-openai:latest
     container_name: ocr
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=2
     volumes:
       - ocr_model:/root/.cache/huggingface
     ports:
@@ -29,6 +31,8 @@ services:
       - '--async-scheduling'
       - '--gpu-memory-utilization'
       - '0.90'
+      - '--max-model-len'
+      - '65536' # 2^16
       - '--host'
       - '0.0.0.0'
       - '--port'
@@ -53,9 +57,9 @@ services:
     environment:
       - MINIO_ENDPOINT=minio:9000
       - OCR_LLM_ENDPOINT=http://ocr:4377/v1
-      - MINIO_DOWNLOAD_URL=http://localhost:9000
+      - MINIO_DOWNLOAD_URL=http://42.96.34.158:8001
     ports:
-      - 8000:8000
+      - 8001:8000
     depends_on:
       - minio
       - ocr
