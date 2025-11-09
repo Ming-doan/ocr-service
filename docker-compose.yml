@@ -1,13 +1,12 @@
 name: ocr_service
 
-# Enable networks of OCR vLLM
-networks:
-  ocr_network:
-    external: true
-
 volumes:
   minio_data:
   ocr_model:
+
+networks:
+  ocr_service_vllm_ocr_network:
+    external: true
 
 services:
   minio:
@@ -16,8 +15,9 @@ services:
     volumes:
       - minio_data:/data
     ports:
-      - 9000:9000
-      - 9001:9001
+      - 9005:9001
+    networks:
+      - ocr_service_vllm_ocr_network
     command: server --console-address ":9001" /data
 
   api:
@@ -30,6 +30,7 @@ services:
       - MINIO_DOWNLOAD_URL=http://42.96.34.158:8001
     ports:
       - 8001:8000
+    networks:
+      - ocr_service_vllm_ocr_network
     depends_on:
       - minio
-      - ocr
