@@ -1,6 +1,6 @@
 from typing import cast
 from PIL import Image
-import json
+import re
 from pydantic import BaseModel
 
 from shapely.geometry import Polygon
@@ -15,13 +15,15 @@ from services.ocr.service import OCRService, ExtractionResult
 
 
 class TableAwareMergeConfig(BaseModel):
+    removal_regex_patterns: list[str] = [
+        r"^A$|^A.$",
+    ]  # Patterns to remove results before processing
     bbox_overlap_threshold: float = 0.5  # > X% overlap to consider overlapping
-    diff_word_freq_threshold: float = 0.05  # < X% difference to consider similar
+    diff_word_freq_threshold: float = 0.5  # < X% difference to consider similar
     start_page_offset: int = 0  # Skip first N pages for header analysis
     end_page_offset: int = 0  # Skip last N pages for footer analysis
     begin_num_result_content: int = 5  # Compare first N results to determine general header layout
-    end_num_result_content: int = 5  # Compare last N results to determine general footer layout
-    removal_regex_patterns: list[str] = []  # Patterns to remove from final text (e.g., page numbers)
+    end_num_result_content: int = 0  # Compare last N results to determine general footer layout
 
 
 class TableAwareResultInput(BaseModel):
@@ -59,14 +61,19 @@ class TableAwareMergeService(BaseService):
     def __init__(self):
         self.ocr_service = OCRService.provider()
 
-    # BUG
-    def _debug_save_output_to_json(
+    def _prune_results_by_regex(
         self,
-        data: dict | list,
-        filename: str
-    ):
-        with open(f"tmp/ocr_service/{filename}.json", "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=4)
+        results: list[ExtractionResult],
+        patterns: list[str]
+    ) -> list[ExtractionResult]:
+        """Remove ExtractionResult items whose text matches any regex pattern"""
+        compiled_patterns = [re.compile(p) for p in patterns]
+        pruned_results = []
+        for r in results:
+            text = r.text.strip()
+            if not any(p.match(text) for p in compiled_patterns):
+                pruned_results.append(r)
+        return pruned_results
 
     def _iou(self, p1: Polygon, p2: Polygon) -> float:
         inter = p1.intersection(p2).area
@@ -159,7 +166,12 @@ class TableAwareMergeService(BaseService):
         self,
         results: list[ExtractionResult]
     ) -> float:
-        texts = [r.text.strip() for r in results if r.text.strip()]
+        texts = []
+        for r in results:
+            if r.category == "Picture":
+                texts.append(" ")
+            else:
+                texts.append(r.text.strip())
         if len(texts) <= 1:
             return 0.0
 
@@ -496,38 +508,40 @@ class TableAwareMergeService(BaseService):
         results: list[TableAwareResultInput],
         config: TableAwareMergeConfig,
     ) -> str:
+        # 0. Prune results by regex
+        pruned_results: list[TableAwareResultInput] = []
+        for r in results:
+            pruned_ocr_results = self._prune_results_by_regex(
+                r.ocr_results,
+                config.removal_regex_patterns
+            )
+            pruned_results.append(
+                TableAwareResultInput(
+                    page_number=r.page_number,
+                    ocr_results=pruned_ocr_results
+                )
+            )
+
         # 1. Get overlapping OCR results
         page_combined_results: list[_PageCombinedResults] = []
-        for result in results:
+        for result in pruned_results:
             page_combined_results.append(
                 _PageCombinedResults(
                     page_number=result.page_number,
                     results=self._get_overlap_ocr_results(result.ocr_results, config)
                 )
             )
-        # self._debug_save_output_to_json(
-        #     data=[r.model_dump() for r in page_combined_results],
-        #     filename=f"{filename}_table_aware_step1.json"
-        # )
 
         # 2. Get general layout
         layout_results = self._get_general_layout_from_pages_results(
             page_combined_results,
             config
         )
-        # self._debug_save_output_to_json(
-        #     data=layout_results.model_dump(),
-        #     filename=f"{filename}_table_aware_step2.json"
-        # )
 
         # 3. Merge table results in each section
         merged_contents = self._merge_table_from_results(
             layout_results.contents
         )
-        # self._debug_save_output_to_json(
-        #     data=[r.model_dump() for r in merged_contents],
-        #     filename=f"{filename}_table_aware_step3.json"
-        # )
 
         # 4. Get markdown text of all parts
         page_cover = self._combined_results_to_text(

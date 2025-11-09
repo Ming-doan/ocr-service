@@ -48,7 +48,8 @@ class OCRService(BaseService):
                 markdown_parts.append(f"_{page_result.text.strip()}_\n\n")
 
             elif page_result.category == 'Formula':
-                markdown_parts.append(f"${page_result.text.strip()}$\n\n")
+                text = re.sub(r'^\${1,2}|\${1,2}$', '', page_result.text.strip())
+                markdown_parts.append(f"${text}$\n\n")
 
             elif page_result.category == 'Table':
                 markdown_parts.append(f"{page_result.text.strip()}\n\n")

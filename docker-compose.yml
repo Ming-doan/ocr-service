@@ -1,5 +1,10 @@
 name: ocr_service
 
+# Enable networks of OCR vLLM
+networks:
+  ocr_network:
+    external: true
+
 volumes:
   minio_data:
   ocr_model:
@@ -15,48 +20,13 @@ services:
       - 9001:9001
     command: server --console-address ":9001" /data
 
-  ocr:
-    image: vllm/vllm-openai:latest
-    container_name: ocr
-    environment:
-      - NVIDIA_VISIBLE_DEVICES=2
-    volumes:
-      - ocr_model:/root/.cache/huggingface
-    ports:
-      - 4377:4377
-    command: 
-      - '--model'
-      - 'rednote-hilab/dots.ocr'
-      - '--trust-remote-code'
-      - '--async-scheduling'
-      - '--gpu-memory-utilization'
-      - '0.85'
-      - '--max-model-len'
-      - '65536' # 2^16
-      - '--host'
-      - '0.0.0.0'
-      - '--port'
-      - '4377'
-    # Container resource
-    ipc: host
-    shm_size: 16gb
-    mem_limit: 16gb
-    runtime: nvidia
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-
   api:
     build: .
     image: api_image
     container_name: api
     environment:
       - MINIO_ENDPOINT=minio:9000
-      - OCR_LLM_ENDPOINT=http://ocr:4377/v1
+      - OCR_LLM_ENDPOINT=http://load-balancer:4377
       - MINIO_DOWNLOAD_URL=http://42.96.34.158:8001
     ports:
       - 8001:8000

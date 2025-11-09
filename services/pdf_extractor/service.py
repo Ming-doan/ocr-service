@@ -21,9 +21,6 @@ from services.pdf_extractor.merge_services.table_aware import (
     TableAwareResultInput,
     TableAwareMergeService
 )
-from services.pdf_extractor.merge_services.table_aware_2 import (
-    TableAware2MergeService
-)
 
 
 class _Result(BaseModel):
@@ -42,7 +39,6 @@ class PDFExtractorService(BaseService):
         self.ocr_service = OCRService.provider()
         self.minio_service = MinioService.provider()
         self.table_aware_merge_service = TableAwareMergeService.provider()
-        self.table_aware_2_merge_service = TableAware2MergeService.provider()
 
         self.pdf_bucket = "pdf-files"
         self.minio_service.create_bucket(self.pdf_bucket)
@@ -167,9 +163,6 @@ class PDFExtractorService(BaseService):
                 results=table_aware_result_inputs,
                 config=TableAwareMergeConfig.model_validate(merge_config or {}),
             )
-
-        elif merge_algorithm == "table_aware_2":
-            result = self.table_aware_2_merge_service.merge()
 
         else:  # merged_algorithm: simple
             result = "\n\n".join(
