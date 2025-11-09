@@ -13,8 +13,8 @@ ExtractionCategory = Literal['Caption', 'Footnote', 'Formula', 'List-item', 'Pag
 PDFExtractionMode = Literal["markdown", "json", "merged"]
 DefaultPDFExtractionMode = "merged"
 
-PDFMergeAlgorithm = Literal["simple", "table_aware"]
-DefaultPDFMergeAlgorithm = "table_aware"
+PDFMergeAlgorithm = Literal["simple", "table_aware", "table_aware_2"]
+DefaultPDFMergeAlgorithm = "simple"
 
 
 # General Interfaces

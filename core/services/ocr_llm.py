@@ -1,9 +1,9 @@
 import os
+import httpx
 import json
 import base64
 import logging
 from io import BytesIO
-from typing import Optional
 
 from PIL import Image
 from pydantic import BaseModel
@@ -45,13 +45,21 @@ class OCRLLMService(OpenAI, BaseService):
         self.ocr_model = os.environ.get("OCR_LLM_MODEL", "rednote-hilab/dots.ocr")
         self.max_completion_tokens = int(os.environ.get("OCR_LLM_MAX_TOKENS", 32768))
 
-        ocr_endpoint = os.environ.get("OCR_LLM_ENDPOINT", "http://localhost:4377/v1")
+        self.ocr_endpoint = os.environ.get("OCR_LLM_ENDPOINT", "http://localhost:4377")
         super().__init__(
             api_key="0",
-            base_url=ocr_endpoint,
+            base_url=f"{self.ocr_endpoint}/v1",
         )
         self.temperature = 0.1
         self.top_p = 0.9
+
+    def health_check(self) -> bool:
+        try:
+            response = httpx.get(f"{self.ocr_endpoint}/health")
+            return response.status_code == 200
+        except Exception as e:
+            logger.error(f"OCR LLM health check failed: {e}")
+            return False
 
     def image_to_base64(
         self,

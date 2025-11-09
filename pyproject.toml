@@ -14,7 +14,9 @@ dependencies = [
     "uvicorn (>=0.38.0,<0.39.0)",
     "pillow (>=12.0.0,<13.0.0)",
     "python-multipart (>=0.0.20,<0.0.21)",
-    "nltk (>=3.9.2,<4.0.0)",
+    "shapely (>=2.1.2,<3.0.0)",
+    "scikit-learn (>=1.7.2,<2.0.0)",
+    "beautifulsoup4 (>=4.14.2,<5.0.0)",
 ]
 
 

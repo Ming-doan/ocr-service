@@ -15,15 +15,23 @@ class MinioService(Minio, BaseService):
     def __init__(self):
         self.minio_download_url = os.getenv("MINIO_DOWNLOAD_URL", "http://localhost:8000")
 
-        minio_endpoint = os.getenv("MINIO_ENDPOINT", "localhost:9000")
+        self.minio_endpoint = os.getenv("MINIO_ENDPOINT", "localhost:9000")
         minio_access_key = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
         minio_secret_key = os.getenv("MINIO_SECRET_KEY", "minioadmin")
         super().__init__(
-            endpoint=minio_endpoint,
+            endpoint=self.minio_endpoint,
             access_key=minio_access_key,
             secret_key=minio_secret_key,
             secure=False,
         )
+
+    def health_check(self) -> bool:
+        try:
+            # Attempt to list buckets as a health check
+            _ = self.list_buckets()
+            return True
+        except Exception:
+            return False
 
     def create_bucket(
         self,

@@ -16,6 +16,14 @@ from core.interfaces.api_interface import (
 )
 from core.services.minio import MinioService
 from services.ocr.service import OCRService, ExtractionResult
+from services.pdf_extractor.merge_services.table_aware import (
+    TableAwareMergeConfig,
+    TableAwareResultInput,
+    TableAwareMergeService
+)
+from services.pdf_extractor.merge_services.table_aware_2 import (
+    TableAware2MergeService
+)
 
 
 class _Result(BaseModel):
@@ -33,6 +41,8 @@ class PDFExtractorService(BaseService):
     def __init__(self):
         self.ocr_service = OCRService.provider()
         self.minio_service = MinioService.provider()
+        self.table_aware_merge_service = TableAwareMergeService.provider()
+        self.table_aware_2_merge_service = TableAware2MergeService.provider()
 
         self.pdf_bucket = "pdf-files"
         self.minio_service.create_bucket(self.pdf_bucket)
@@ -79,6 +89,7 @@ class PDFExtractorService(BaseService):
         filename: str | None = None,
         mode: PDFExtractionMode = DefaultPDFExtractionMode,
         merge_algorithm: PDFMergeAlgorithm = DefaultPDFMergeAlgorithm,
+        merge_config: dict | None = None,
         max_pages: int | None = None,
     ):
         # Convert PDF to images
@@ -142,13 +153,29 @@ class PDFExtractorService(BaseService):
         
         # merged
         if merge_algorithm == "table_aware":
-            ...
+            table_aware_result_inputs: list[TableAwareResultInput] = [
+                TableAwareResultInput(
+                    page_number=page_number + 1,
+                    ocr_results=ocr_result,
+                )
+                for page_number, ocr_result in enumerate(ocr_results)
+                if isinstance(ocr_result, list)
+            ]
+            result = self.table_aware_merge_service.merge(
+                images=images,
+                filename=filename,
+                results=table_aware_result_inputs,
+                config=TableAwareMergeConfig.model_validate(merge_config or {}),
+            )
 
-        # simple
-        result = "\n\n".join(
-            result if isinstance(result, str) else ""
-            for result in ocr_results
-        )
+        elif merge_algorithm == "table_aware_2":
+            result = self.table_aware_2_merge_service.merge()
+
+        else:  # merged_algorithm: simple
+            result = "\n\n".join(
+                result if isinstance(result, str) else ""
+                for result in ocr_results
+            )
         return PDFExtractionResult(
             total_pages=len(images),
             file=access_url,

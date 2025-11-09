@@ -30,7 +30,7 @@ services:
       - '--trust-remote-code'
       - '--async-scheduling'
       - '--gpu-memory-utilization'
-      - '0.90'
+      - '0.85'
       - '--max-model-len'
       - '65536' # 2^16
       - '--host'
@@ -39,8 +39,8 @@ services:
       - '4377'
     # Container resource
     ipc: host
-    shm_size: 32gb
-    mem_limit: 32gb
+    shm_size: 16gb
+    mem_limit: 16gb
     runtime: nvidia
     deploy:
       resources:
