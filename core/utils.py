@@ -5,7 +5,7 @@ import asyncio
 
 T = TypeVar("T")
 
-MAX_CONCURRENT_TASKS = int(os.getenv("MAX_CONCURRENT_TASKS", 1))  # Default to 1 to avoid out-of-memory in vllm
+MAX_CONCURRENT_TASKS = int(os.getenv("MAX_CONCURRENT_TASKS", 3))  # Default to 3 to avoid out-of-memory in vllm
 semaphore = asyncio.Semaphore(MAX_CONCURRENT_TASKS)
 
 async def run_in_async(func: Callable[..., T], *args, **kwargs) -> T:

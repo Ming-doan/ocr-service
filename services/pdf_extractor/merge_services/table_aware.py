@@ -1,4 +1,6 @@
+from typing import cast
 from PIL import Image
+import json
 from pydantic import BaseModel
 
 from shapely.geometry import Polygon
@@ -50,9 +52,21 @@ class _MergedPageCombinedResults(BaseModel):
     text: str = ""
 
 
+_ListOfPageCombinedResults = list[_PageCombinedResults | _MergedPageCombinedResults]
+
+
 class TableAwareMergeService(BaseService):
     def __init__(self):
         self.ocr_service = OCRService.provider()
+
+    # BUG
+    def _debug_save_output_to_json(
+        self,
+        data: dict | list,
+        filename: str
+    ):
+        with open(f"tmp/ocr_service/{filename}.json", "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
 
     def _iou(self, p1: Polygon, p2: Polygon) -> float:
         inter = p1.intersection(p2).area
@@ -77,12 +91,16 @@ class TableAwareMergeService(BaseService):
                 (r.bbox[0], r.bbox[1]),
                 (r.bbox[2], r.bbox[1]),
                 (r.bbox[2], r.bbox[3]),
-                (r.bbox[0], r.bbox[3])
+                (r.bbox[0], r.bbox[3]),
             ])
             for r in results
         ]
 
         index = STRtree(polys)
+
+        # Map geometry object → index via STRtree.geometries
+        geom_to_idx = {geom: i for i, geom in enumerate(index.geometries)}
+
         visited = set()
         groups = []
 
@@ -101,27 +119,23 @@ class TableAwareMergeService(BaseService):
                 visited.add(idx)
                 cluster.append(idx)
 
-                # spatial index query
+                # query neighbors
                 candidates = index.query(polys[idx])
 
-                for cand_poly in candidates:
-                    j = polys.index(cand_poly)
-                    if j in visited:
+                for cand in candidates:
+                    j = geom_to_idx.get(cand)
+                    if j is None or j in visited:
                         continue
 
-                    iou = self._iou(polys[idx], polys[j])
-
-                    if iou >= threshold:
+                    if self._iou(polys[idx], polys[j]) >= threshold:
                         stack.append(j)
 
-            # Build merged result for this cluster
+            # merge cluster
             cluster_items = [results[k] for k in cluster]
-            merged_text = "\n".join(r.text for r in cluster_items).strip()
-
             groups.append(
                 _CombinedResults(
                     results=cluster_items,
-                    text=merged_text
+                    text="\n".join(r.text for r in cluster_items).strip()
                 )
             )
 
@@ -148,13 +162,16 @@ class TableAwareMergeService(BaseService):
         texts = [r.text.strip() for r in results if r.text.strip()]
         if len(texts) <= 1:
             return 0.0
-        
+
         # TF-IDF vectorization
         vectorizer = TfidfVectorizer(lowercase=True)
-        X = vectorizer.fit_transform(texts)  # shape: (N, V)
+        X = vectorizer.fit_transform(texts)  # shape: (N, V) → sparse matrix
 
-        # centroid of all vectors
-        centroid = X.mean(axis=0)  # type: ignore[attr-defined]
+        # centroid of all vectors, still sparse, shape (1, V)
+        centroid = X.mean(axis=0)  # type: ignore
+
+        # convert to regular array (dense)
+        centroid = np.asarray(centroid)
 
         # cosine similarity for each page vs centroid
         sims = cosine_similarity(X, centroid)
@@ -406,42 +423,69 @@ class TableAwareMergeService(BaseService):
         filename: str,
         page: _PageCombinedResults
     ) -> str:
-        # flatten list[_CombinedResults] → list[ExtractionResult]
         flat: list[ExtractionResult] = []
         for combined in page.results:
             flat.extend(combined.results)
 
         return self.ocr_service.convert_to_markdown(
-            image, flat, filename
+            image,
+            flat,
+            filename,
         )
 
     def _combined_results_to_text(
         self,
         images: list[Image.Image],
         filename: str,
-        results: list[_PageCombinedResults | _MergedPageCombinedResults]
+        results: _ListOfPageCombinedResults
     ) -> str:
         chunks: list[str] = []
 
         for item in results:
 
-            # Case 1: item is a merged group (contains many pages)
-            if isinstance(item, _MergedPageCombinedResults):
-                for page in item.results:
-                    # Filter not Table pages
-                    if all(r.category != "Table" for r in page.results):
-                        continue
-                    page_md = self._render_page_to_markdown(
-                        images[page.page_number - 1], filename, page
-                    )
-                    chunks.append(page_md)
+            # -----------------------------------------
+            # Case 1 — Normal page
+            # -----------------------------------------
+            if isinstance(item, _PageCombinedResults):
+                chunks.append(self._render_page_to_markdown(
+                    images[item.page_number - 1],
+                    filename,
+                    item
+                ))
+                continue
 
-            # Case 2: item is a single page
-            else:  # _PageCombinedResults
-                page_md = self._render_page_to_markdown(
-                    images[page.page_number - 1], filename, item
-                )
-                chunks.append(page_md)
+            # -----------------------------------------
+            # Case 2 — Merged table block
+            # -----------------------------------------
+            if isinstance(item, _MergedPageCombinedResults):
+
+                # 1) Render all *non-table* components from each page
+                for page in item.results:
+                    non_table = [
+                        c for c in page.results
+                        if not any(er.category == "Table" for er in c.results)
+                    ]
+
+                    if not non_table:
+                        continue
+
+                    # Build temp page with only non-table components
+                    temp_page = _PageCombinedResults(
+                        page_number=page.page_number,
+                        results=non_table
+                    )
+                    chunks.append(self._render_page_to_markdown(
+                        images[temp_page.page_number - 1],
+                        filename,
+                        temp_page
+                    ))
+
+                # 2) Append merged TABLE as final markdown content
+                # item.text contains merged <table>…</table>
+                if item.text.strip():
+                    chunks.append(item.text)
+
+                continue
 
         return "\n".join(chunks)
 
@@ -460,17 +504,62 @@ class TableAwareMergeService(BaseService):
                     page_number=result.page_number,
                     results=self._get_overlap_ocr_results(result.ocr_results, config)
                 )
-        )
-        
+            )
+        # self._debug_save_output_to_json(
+        #     data=[r.model_dump() for r in page_combined_results],
+        #     filename=f"{filename}_table_aware_step1.json"
+        # )
+
         # 2. Get general layout
         layout_results = self._get_general_layout_from_pages_results(
             page_combined_results,
             config
         )
+        # self._debug_save_output_to_json(
+        #     data=layout_results.model_dump(),
+        #     filename=f"{filename}_table_aware_step2.json"
+        # )
 
         # 3. Merge table results in each section
         merged_contents = self._merge_table_from_results(
             layout_results.contents
         )
+        # self._debug_save_output_to_json(
+        #     data=[r.model_dump() for r in merged_contents],
+        #     filename=f"{filename}_table_aware_step3.json"
+        # )
 
-        return ""
+        # 4. Get markdown text of all parts
+        page_cover = self._combined_results_to_text(
+            images,
+            filename,
+            cast(_ListOfPageCombinedResults, layout_results.begin_page_cover)
+        )
+        header = self._combined_results_to_text(
+            images,
+            filename,
+            cast(_ListOfPageCombinedResults, layout_results.header)
+        )
+        contents = self._combined_results_to_text(
+            images,
+            filename,
+            merged_contents
+        )
+        footer = self._combined_results_to_text(
+            images,
+            filename,
+            cast(_ListOfPageCombinedResults, layout_results.footer)
+        )
+        end_page_cover = self._combined_results_to_text(
+            images,
+            filename,
+            cast(_ListOfPageCombinedResults, layout_results.end_page_cover)
+        )
+
+        return "\n\n".join([
+            page_cover,
+            header,
+            contents,
+            footer,
+            end_page_cover,
+        ])
