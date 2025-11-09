@@ -1,0 +1,99 @@
+name: ocr_service_vllm
+
+x-vllm-ocr-config: &vllm-ocr
+  image: vllm/vllm-openai:latest
+  restart: unless-stopped
+  volumes:
+    - ocr_model:/root/.cache/huggingface
+  command: 
+    - '--model'
+    - 'rednote-hilab/dots.ocr'
+    - '--trust-remote-code'
+    - '--async-scheduling'
+    - '--gpu-memory-utilization'
+    - '0.85'
+    - '--max-model-len'
+    - '65536' # 2^16
+    - '--host'
+    - '0.0.0.0'
+    - '--port'
+    - '4377'
+  ipc: host
+  shm_size: 16gb
+  mem_limit: 16gb
+  runtime: nvidia
+  networks:
+    - ocr_network
+
+volumes:
+  ocr_model:
+
+networks:
+  ocr_network:
+    driver: bridge
+
+services:
+  ocr-1:
+    <<: *vllm-ocr
+    container_name: ocr-1
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=0
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["0"]
+              capabilities: [gpu]
+
+  ocr-2:
+    <<: *vllm-ocr
+    container_name: ocr-2
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=1
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["1"]
+              capabilities: [gpu]
+
+  ocr-3:
+    <<: *vllm-ocr
+    container_name: ocr-3
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=2
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["2"]
+              capabilities: [gpu]
+  
+  ocr-4:
+    <<: *vllm-ocr
+    container_name: ocr-4
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=3
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["3"]
+              capabilities: [gpu]
+
+  load-balancer:
+    image: nginx:latest
+    container_name: load_balancer
+    ports:
+      - "4377:4377"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    networks:
+      - ocr_network
+    depends_on:
+      - ocr-1
+      - ocr-2
