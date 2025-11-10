@@ -1,42 +1,26 @@
-import json
 import os
 from pathlib import Path
 from subprocess import run
+import argparse
 
 PDF_FOLDER = "pdfs"
 OUTPUT_FOLDER = "output"
-LOG_FILE = "logs.json"
-
-# Your main extraction script
-MAIN_SCRIPT = "export_pdf_public_test.py"
+MAIN_SCRIPT = "scripts/export_pdf_public_test.py"
 
 
-def load_logs():
-    if not os.path.exists(LOG_FILE):
-        return []
-    with open(LOG_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def output_is_empty(pdf_stem):
-    folder = Path(OUTPUT_FOLDER) / pdf_stem
+def output_is_empty(stem: str) -> bool:
+    folder = Path(OUTPUT_FOLDER) / stem
     return (not folder.exists()) or (not any(folder.iterdir()))
 
 
-def find_failed_pdfs(logs):
-    failed = set()
+def find_empty_outputs():
+    pdf_files = Path(PDF_FOLDER).glob("*.pdf")
+    failed = []
 
-    for entry in logs:
-        name = entry["pdf"]
-        stem = Path(name).stem
-
-        if entry["status"] == "error":
-            failed.add(stem)
-            continue
-
-        # success but empty output → treat as error
+    for pdf in pdf_files:
+        stem = pdf.stem
         if output_is_empty(stem):
-            failed.add(stem)
+            failed.append(stem)
 
     return sorted(failed)
 
@@ -45,7 +29,7 @@ def rerun(stems):
     for stem in stems:
         pdf_path = Path(PDF_FOLDER) / f"{stem}.pdf"
         if not pdf_path.exists():
-            print(f"[skip] Missing PDF: {pdf_path}")
+            print(f"[skip] missing PDF: {pdf_path}")
             continue
 
         print(f"[retry] {pdf_path}")
@@ -53,14 +37,21 @@ def rerun(stems):
 
 
 def main():
-    logs = load_logs()
-    failed = find_failed_pdfs(logs)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--only", type=str, help="Retry only this PDF stem")
+    args = parser.parse_args()
 
-    if not failed:
-        print("✅ No failed files. Nothing to re-run.")
+    if args.only:
+        rerun([args.only])
         return
 
-    print("❗ Failed PDFs:", failed)
+    failed = find_empty_outputs()
+
+    if not failed:
+        print("✅ No empty output folders. Nothing to retry.")
+        return
+
+    print("❗ Empty output detected:", failed)
     rerun(failed)
 
 

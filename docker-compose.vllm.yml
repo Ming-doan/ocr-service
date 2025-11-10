@@ -46,44 +46,44 @@ services:
               device_ids: ["0"]
               capabilities: [gpu]
 
-  ocr-2:
-    <<: *vllm-ocr
-    container_name: ocr-2
-    environment:
-      - NVIDIA_VISIBLE_DEVICES=1
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              device_ids: ["1"]
-              capabilities: [gpu]
+  # ocr-2:
+  #   <<: *vllm-ocr
+  #   container_name: ocr-2
+  #   environment:
+  #     - NVIDIA_VISIBLE_DEVICES=1
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             device_ids: ["1"]
+  #             capabilities: [gpu]
 
-  ocr-3:
-    <<: *vllm-ocr
-    container_name: ocr-3
-    environment:
-      - NVIDIA_VISIBLE_DEVICES=2
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              device_ids: ["2"]
-              capabilities: [gpu]
+  # ocr-3:
+  #   <<: *vllm-ocr
+  #   container_name: ocr-3
+  #   environment:
+  #     - NVIDIA_VISIBLE_DEVICES=2
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             device_ids: ["2"]
+  #             capabilities: [gpu]
   
-  ocr-4:
-    <<: *vllm-ocr
-    container_name: ocr-4
-    environment:
-      - NVIDIA_VISIBLE_DEVICES=3
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              device_ids: ["3"]
-              capabilities: [gpu]
+  # ocr-4:
+  #   <<: *vllm-ocr
+  #   container_name: ocr-4
+  #   environment:
+  #     - NVIDIA_VISIBLE_DEVICES=3
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             device_ids: ["3"]
+  #             capabilities: [gpu]
 
   load-balancer:
     image: nginx:latest
@@ -96,4 +96,6 @@ services:
       - ocr_network
     depends_on:
       - ocr-1
-      - ocr-2
+      # - ocr-2
+      # - ocr-3
+      # - ocr-4

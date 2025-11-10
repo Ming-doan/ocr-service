@@ -5,6 +5,7 @@ import requests
 from pathlib import Path
 from urllib.parse import urlparse
 from zipfile import ZipFile
+import argparse
 
 # Configuration
 PDF_FOLDER = "pdfs"          # Folder that contains PDFs
@@ -136,5 +137,34 @@ def main():
     write_logs()
 
 
+def main_single(pdf_path):
+    name = pdf_path.name
+    log_entry(name, "start")
+
+    try:
+        pdf_folder = Path(OUTPUT_FOLDER) / pdf_path.stem
+        pdf_folder.mkdir(parents=True, exist_ok=True)
+
+        resp_json = send_api_request(pdf_path)
+        result_text = resp_json.get("data", {}).get("result", "")
+
+        md_path = save_markdown(pdf_folder, pdf_path, result_text)
+        fetch_images(md_path)
+        zip_folder(pdf_path, pdf_folder)
+
+        log_entry(name, "success")
+    except Exception as e:
+        log_entry(name, "error", str(e))
+
+    write_logs()
+
+
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--single", type=str, help="Process a single PDF file path")
+    args = parser.parse_args()
+
+    if args.single:
+        main_single(Path(args.single))
+    else:
+        main()

@@ -219,3 +219,4 @@ tmp/
 pdfs/
 logs.json
 output/
+*.zip
