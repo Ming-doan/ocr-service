@@ -5,6 +5,8 @@ import asyncio
 import uuid
 from io import BytesIO
 
+import json
+
 from pydantic import BaseModel
 
 from core.base import BaseService
@@ -51,33 +53,39 @@ class PDFExtractorService(BaseService):
         max_pages: int | None = None,
     ) -> list[Image.Image]:
         try:
-            pdf_document = fitz.open(stream=data, filetype="pdf")
+            pdf = fitz.open(stream=data, filetype="pdf")
         except Exception as e:
             raise ValueError("Failed to open PDF document") from e
-        
-        total_pages = pdf_document.page_count
 
-        zoom_matrix = fitz.Matrix(self.pdf_dpi / 72, self.pdf_dpi / 72)
-        images: list[Image.Image] = []
+        images = []
 
         try:
-            for page_num in range(total_pages):
-                if max_pages and page_num >= max_pages:
+            for page_idx in range(pdf.page_count):
+                if max_pages and page_idx >= max_pages:
                     break
 
-                page = pdf_document.load_page(page_num)
-                pix = page.get_pixmap(matrix=zoom_matrix)  # type: ignore[attr-defined]
+                page = pdf.load_page(page_idx)
 
-                # Handle transparency correctly
+                # ✅ Render directly using DPI (replaces Matrix(dpi/72))
+                pix = page.get_pixmap(dpi=self.pdf_dpi)
+
+                # ✅ Safeguard: very rare case when image becomes too large (>4500px)
+                if pix.width > 4500 or pix.height > 4500:
+                    # Render at default 72 DPI instead
+                    pix = page.get_pixmap(dpi=72)
+
                 mode = "RGBA" if pix.alpha else "RGB"
-                image = Image.frombytes(mode, (pix.width, pix.height), pix.samples)
-                image = image.convert("RGB")  # Ensure no alpha channel
+                img = Image.frombytes(mode, (pix.width, pix.height), pix.samples)
 
-                images.append(image)
+                # Always provide clean RGB
+                img = img.convert("RGB")
+
+                images.append(img)
+
             return images
 
         finally:
-            pdf_document.close()
+            pdf.close()
 
     async def extract(
         self,

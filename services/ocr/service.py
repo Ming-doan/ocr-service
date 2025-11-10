@@ -32,6 +32,7 @@ class OCRService(BaseService):
         image: Image.Image,
         results: list[ExtractionResult],
         filename: str | None = None,
+        image_bbox_scale_factor: tuple[float, float] = (1.0, 1.0)
     ) -> str:
         markdown_parts = []
         filename = filename or str(uuid.uuid4())
@@ -63,7 +64,13 @@ class OCRService(BaseService):
 
             elif page_result.category == 'Picture':
                 # Crop image using bbox
-                bbox = page_result.bbox
+                bbox = page_result.bbox  # x0, y0, x1, y1
+                bbox = (
+                    bbox[0] * image_bbox_scale_factor[0],
+                    bbox[1] * image_bbox_scale_factor[1],
+                    bbox[2] * image_bbox_scale_factor[0],
+                    bbox[3] * image_bbox_scale_factor[1],
+                )
                 cropped_image = image.crop((bbox[0], bbox[1], bbox[2], bbox[3]))
 
                 # Upload to Minio

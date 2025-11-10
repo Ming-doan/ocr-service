@@ -4,6 +4,7 @@ import json
 import base64
 import logging
 from io import BytesIO
+import re
 
 from PIL import Image
 from pydantic import BaseModel
@@ -70,6 +71,12 @@ class OCRLLMService(OpenAI, BaseService):
         image.save(buffered, format=format)
         base64_str = base64.b64encode(buffered.getvalue()).decode('utf-8')
         return f"data:image/{format.lower()};base64,{base64_str}"
+    
+    def safe_json_loads(self, s: str):
+        try:
+            return json.loads(s)
+        except:
+            return []  # return empty list on failure
 
     def extract_text(
         self,
@@ -103,6 +110,6 @@ class OCRLLMService(OpenAI, BaseService):
             logger.error("OCR LLM returned empty result")
             return []
         
-        result_json = json.loads(result_text)
+        result_json = self.safe_json_loads(result_text)
         extraction_results = [ExtractionResult.model_validate(item) for item in result_json]
         return extraction_results

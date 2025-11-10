@@ -24,6 +24,12 @@ x-vllm-ocr-config: &vllm-ocr
   runtime: nvidia
   networks:
     - ocr_network
+  healthcheck:
+    test: ["CMD-SHELL", "curl -f http://localhost:4377/health || exit 1"]
+    interval: 1m30s
+    timeout: 10s
+    retries: 3
+    start_period: 40s
 
 volumes:
   ocr_model:
@@ -95,7 +101,11 @@ services:
     networks:
       - ocr_network
     depends_on:
-      - ocr-1
-      # - ocr-2
-      # - ocr-3
-      # - ocr-4
+      ocr-1:
+        condition: service_healthy
+      # ocr-2:
+      #   condition: service_healthy
+      # ocr-3:
+      #   condition: service_healthy
+      # ocr-4:
+      #   condition: service_healthy

@@ -3,6 +3,8 @@ from PIL import Image
 import re
 from pydantic import BaseModel
 
+import json
+
 from shapely.geometry import Polygon
 from shapely.strtree import STRtree
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -14,15 +16,24 @@ from core.base import BaseService
 from services.ocr.service import OCRService, ExtractionResult
 
 
+
+def save_json_debug(data, filename: str):
+    with open(filename, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
 class TableAwareMergeConfig(BaseModel):
     removal_regex_patterns: list[str] = [
         r"^A$|^A.$",
+        r'(?i)\bVIETTEL AI RACE\b',
+        r'(?i)Lần ban hành\s*:?\s*\d+'
     ]  # Patterns to remove results before processing
     bbox_overlap_threshold: float = 0.5  # > X% overlap to consider overlapping
-    diff_word_freq_threshold: float = 0.5  # < X% difference to consider similar
+    diff_word_freq_threshold: float = 0.1  # < X% difference to consider similar
+    diff_word_num_component_threshold: float = 0.8  # >= X% of component difference to consider similar
     start_page_offset: int = 0  # Skip first N pages for header analysis
     end_page_offset: int = 0  # Skip last N pages for footer analysis
-    begin_num_result_content: int = 5  # Compare first N results to determine general header layout
+    begin_num_result_content: int = 2  # Compare first N results to determine general header layout
     end_num_result_content: int = 0  # Compare last N results to determine general footer layout
 
 
@@ -61,6 +72,8 @@ class TableAwareMergeService(BaseService):
     def __init__(self):
         self.ocr_service = OCRService.provider()
 
+        self.image_bbox_scale_factor = (1.0, 1.0)
+
     def _prune_results_by_regex(
         self,
         results: list[ExtractionResult],
@@ -74,6 +87,13 @@ class TableAwareMergeService(BaseService):
             if not any(p.match(text) for p in compiled_patterns):
                 pruned_results.append(r)
         return pruned_results
+    
+    def _remove_components_by_category(
+        self,
+        results: list[ExtractionResult],
+        categories: list[str]
+    ) -> list[ExtractionResult]:
+        return [r for r in results if r.category not in categories]
 
     def _iou(self, p1: Polygon, p2: Polygon) -> float:
         inter = p1.intersection(p2).area
@@ -194,6 +214,36 @@ class TableAwareMergeService(BaseService):
         # return average difference
         return float(np.mean(diffs))
 
+    def _is_component_index_general(
+        self,
+        group: list[_CombinedResults],
+        config: TableAwareMergeConfig,
+    ) -> bool:
+        if len(group) <= 1:
+            return False
+
+        flat = self._flat_combined_results(group)
+        if not flat:
+            return False
+
+        # Compute per-page diff
+        diffs = []
+        for r in group:
+            r_flat = self._flat_combined_results([r])
+            if not r_flat:
+                continue
+            diff = self._get_result_diff_by_word_feq(r_flat)
+            diffs.append(diff)
+
+        if not diffs:
+            return False
+
+        # Count how many pages have "similar" component
+        similar_count = sum(d <= config.diff_word_freq_threshold for d in diffs)
+        ratio = similar_count / len(diffs)
+
+        return ratio >= config.diff_word_num_component_threshold
+
     def _get_general_layout_from_pages_results(
         self,
         results: list[_PageCombinedResults],
@@ -239,26 +289,15 @@ class TableAwareMergeService(BaseService):
         max_header_idx = config.begin_num_result_content
 
         for idx in range(max_header_idx):
-            # gather that component index across pages
-            group = []
-            for p in pages:
-                if idx < len(p.results):
-                    group.append(p.results[idx])
+            group = [p.results[idx] for p in pages if idx < len(p.results)]
             if len(group) < 2:
                 continue
 
-            # diff based on ExtractionResults
-            flat = self._flat_combined_results(group)
-            if not flat:
-                continue
-
-            diff = self._get_result_diff_by_word_feq(flat)
-            if diff <= config.diff_word_freq_threshold:
-                # ✅ detected header → keep only first page's component
+            if self._is_component_index_general(group, config):
                 header.append(
                     _PageCombinedResults(
                         page_number=first_page.page_number,
-                        results=[first_page.results[idx]]
+                        results=[first_page.results[idx]],
                     )
                 )
                 used_header_indices.add(idx)
@@ -267,24 +306,15 @@ class TableAwareMergeService(BaseService):
         max_footer_idx = config.end_num_result_content
 
         for rev_idx in range(1, max_footer_idx + 1):
-            group = []
-            for p in pages:
-                if rev_idx <= len(p.results):
-                    group.append(p.results[-rev_idx])
+            group = [p.results[-rev_idx] for p in pages if rev_idx <= len(p.results)]
             if len(group) < 2:
                 continue
 
-            flat = self._flat_combined_results(group)
-            if not flat:
-                continue
-
-            diff = self._get_result_diff_by_word_feq(flat)
-            if diff <= config.diff_word_freq_threshold:
-                # ✅ detected footer → keep only last page's component
+            if self._is_component_index_general(group, config):
                 footer.append(
                     _PageCombinedResults(
                         page_number=last_page.page_number,
-                        results=[last_page.results[-rev_idx]]
+                        results=[last_page.results[-rev_idx]],
                     )
                 )
                 used_footer_indices.add(len(last_page.results) - rev_idx)
@@ -341,6 +371,16 @@ class TableAwareMergeService(BaseService):
 
         return str(base)
 
+    def _get_last_table_component_from_combined(
+        self,
+        c: list[_CombinedResults]
+    ) -> _CombinedResults:
+        for comp in c:
+            for er in comp.results[::-1]:  # check from last to first
+                if er.category == "Table":
+                    return comp
+        return c[-1]
+
     def _combined_is_table(self, c: _CombinedResults) -> bool:
         if not c.results:
             return False
@@ -379,7 +419,7 @@ class TableAwareMergeService(BaseService):
 
                 # --- collect chain pages and table combined blocks ---
                 chain_pages: list[_PageCombinedResults] = [page]  # will be used to record page_numbers in merged.results
-                table_combined_blocks: list[_CombinedResults] = [page.results[-1]]  # last combined of first page
+                table_combined_blocks: list[_CombinedResults] = [self._get_last_table_component_from_combined(page.results)]
 
                 j = i + 1
                 # extend chain while next page's first combined is a table
@@ -443,6 +483,7 @@ class TableAwareMergeService(BaseService):
             image,
             flat,
             filename,
+            image_bbox_scale_factor=self.image_bbox_scale_factor,
         )
 
     def _combined_results_to_text(
@@ -515,12 +556,20 @@ class TableAwareMergeService(BaseService):
                 r.ocr_results,
                 config.removal_regex_patterns
             )
+            pruned_ocr_results = self._remove_components_by_category(
+                pruned_ocr_results,
+                categories=["Page-footer"]
+            )
             pruned_results.append(
                 TableAwareResultInput(
                     page_number=r.page_number,
                     ocr_results=pruned_ocr_results
                 )
             )
+        # save_json_debug(
+        #     [r.model_dump() for r in pruned_results],
+        #     "tmp/step0.json"
+        # )
 
         # 1. Get overlapping OCR results
         page_combined_results: list[_PageCombinedResults] = []
@@ -531,17 +580,29 @@ class TableAwareMergeService(BaseService):
                     results=self._get_overlap_ocr_results(result.ocr_results, config)
                 )
             )
+        # save_json_debug(
+        #     [p.model_dump() for p in page_combined_results],
+        #     "tmp/step1.json"
+        # )
 
         # 2. Get general layout
         layout_results = self._get_general_layout_from_pages_results(
             page_combined_results,
             config
         )
+        # save_json_debug(
+        #     layout_results.model_dump(),
+        #     "tmp/step2.json"
+        # )
 
         # 3. Merge table results in each section
         merged_contents = self._merge_table_from_results(
             layout_results.contents
         )
+        # save_json_debug(
+        #     [p.model_dump() for p in merged_contents],
+        #     "tmp/step3.json"
+        # )
 
         # 4. Get markdown text of all parts
         page_cover = self._combined_results_to_text(
