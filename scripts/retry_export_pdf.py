@@ -3,7 +3,7 @@ from pathlib import Path
 from subprocess import run
 import argparse
 
-PDF_FOLDER = "pdfs"
+PDF_FOLDER = "pdfs/input"
 OUTPUT_FOLDER = "output"
 MAIN_SCRIPT = "scripts/export_pdf_public_test.py"
 

@@ -5,7 +5,7 @@ import asyncio
 
 T = TypeVar("T")
 
-MAX_CONCURRENT_TASKS = int(os.getenv("MAX_CONCURRENT_TASKS", 2))  # Default to 2 to avoid out-of-memory in vllm
+MAX_CONCURRENT_TASKS = int(os.getenv("MAX_CONCURRENT_TASKS", 1))  # Default to 2 to avoid out-of-memory in vllm
 semaphore = asyncio.Semaphore(MAX_CONCURRENT_TASKS)
 
 async def run_in_async(func: Callable[..., T], *args, **kwargs) -> T:
@@ -14,18 +14,18 @@ async def run_in_async(func: Callable[..., T], *args, **kwargs) -> T:
     wrapped = partial(func, *args, **kwargs)
     async with semaphore:
         return await loop.run_in_executor(None, wrapped)
-    
+
 
 class HealthCheckFunc(TypedDict):
     name: str
     func: Callable[..., bool]
-    
+
 
 class ServiceStatus(TypedDict):
     service_name: str
     status: str
     error: str | None
-    
+
 
 def health_checker(
     functions: list[HealthCheckFunc]

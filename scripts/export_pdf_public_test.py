@@ -8,10 +8,10 @@ from zipfile import ZipFile
 import argparse
 
 # Configuration
-PDF_FOLDER = "pdfs"          # Folder that contains PDFs
+PDF_FOLDER = "pdfs/input"          # Folder that contains PDFs
 OUTPUT_FOLDER = "output"     # Where result folders + zip files go
 LOG_FILE = "logs.json"
-API_URL = "http://localhost:8001/api/pdf/extract"
+API_URL = "http://localhost:8005/api/pdf/extract"
 
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
@@ -38,7 +38,7 @@ def send_api_request(pdf_path):
         files = {"pdf": f}
         data = {
             "response_format": "merged",
-            "merge_algorithm": "table_aware",
+            "merge_algorithm": "simple",
             "max_pages": 0
         }
         response = requests.post(API_URL, files=files, data=data, timeout=None)
@@ -55,31 +55,37 @@ def fetch_images(md_path):
     with open(md_path, "r", encoding="utf-8") as f:
         content = f.read()
 
-    # Detect images: ![alt](URL)
-    urls = re.findall(r"!\[.*?\]\((https?:\/\/[^\)]+)\)", content)
+    # Capture full markdown + URL separately
+    # group(0) = full: ![alt](url)
+    # group(1) = alt text
+    # group(2) = url
+    matches = re.findall(r"!\[(.*?)\]\((https?:\/\/[^\)]+)\)", content)
 
     replacements = {}
-    for idx, url in enumerate(urls, start=1):
+
+    for idx, (alt, url) in enumerate(matches, start=1):
         ext = os.path.splitext(urlparse(url).path)[1] or ".png"
         image_name = f"image_{idx}{ext}"
         image_path = md_path.parent / image_name
+        placeholder = f"|<image_{idx}>|"
 
         try:
             resp = requests.get(url)
             resp.raise_for_status()
+
             with open(image_path, "wb") as img_f:
                 img_f.write(resp.content)
 
-            replacements[url] = f"|<image_{idx}>|"
+            full_md = f"![{alt}]({url})"
+            replacements[full_md] = placeholder
 
         except Exception as e:
             log_entry(md_path.stem, "image_error", f"{url}: {e}")
 
-    # Replace URLs with |<image_X>|
+    # Replace the whole ![alt](url) block
     for old, new in replacements.items():
         content = content.replace(old, new)
 
-    # Save updated markdown
     with open(md_path, "w", encoding="utf-8") as f:
         f.write(content)
 
@@ -96,8 +102,11 @@ def zip_folder(pdf_name, pdf_folder):
 
 # --- Main --------------------------------------------------------------------
 
-def main():
-    pdf_files = fetch_pdf_files(PDF_FOLDER)
+def main(
+    in_dir: str,
+    out_dir: str
+):
+    pdf_files = fetch_pdf_files(in_dir)
 
     for idx, pdf_path in enumerate(pdf_files):
         name = pdf_path.name
@@ -106,7 +115,7 @@ def main():
         try:
             print(f"Processing {name}...")
             # Create per-PDF folder: output/myfile/
-            pdf_folder = Path(OUTPUT_FOLDER) / pdf_path.stem
+            pdf_folder = Path(out_dir) / pdf_path.stem
             pdf_folder.mkdir(parents=True, exist_ok=True)
 
             # 1. API call
@@ -137,12 +146,15 @@ def main():
     write_logs()
 
 
-def main_single(pdf_path):
+def main_single(
+    pdf_path,
+    out_dir: str
+):
     name = pdf_path.name
     log_entry(name, "start")
 
     try:
-        pdf_folder = Path(OUTPUT_FOLDER) / pdf_path.stem
+        pdf_folder = Path(out_dir) / pdf_path.stem
         pdf_folder.mkdir(parents=True, exist_ok=True)
 
         resp_json = send_api_request(pdf_path)
@@ -161,10 +173,15 @@ def main_single(pdf_path):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("--in-dir", type=str, required=True)
+    parser.add_argument("--out-dir", type=str, required=True)
     parser.add_argument("--single", type=str, help="Process a single PDF file path")
     args = parser.parse_args()
 
     if args.single:
-        main_single(Path(args.single))
+        main_single(Path(args.single), out_dir=args.out_dir)
     else:
-        main()
+        main(
+            in_dir=args.in_dir,
+            out_dir=args.out_dir
+        )

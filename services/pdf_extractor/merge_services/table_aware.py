@@ -26,11 +26,12 @@ class TableAwareMergeConfig(BaseModel):
     removal_regex_patterns: list[str] = [
         r"^A$|^A.$",
         r'(?i)\bVIETTEL AI RACE\b',
-        r'(?i)Lần ban hành\s*:?\s*\d+'
+        r'(?i)Lần ban hành\s*:?\s*\d+',
+        r'(?i)Làn ban hành\s*:?\s*\d+'
     ]  # Patterns to remove results before processing
-    bbox_overlap_threshold: float = 0.5  # > X% overlap to consider overlapping
+    bbox_overlap_threshold: float = 0.9  # > X% overlap to consider overlapping
     diff_word_freq_threshold: float = 0.1  # < X% difference to consider similar
-    diff_word_num_component_threshold: float = 0.8  # >= X% of component difference to consider similar
+    diff_word_num_component_threshold: float = 1  # >= X% of component difference to consider similar
     start_page_offset: int = 0  # Skip first N pages for header analysis
     end_page_offset: int = 0  # Skip last N pages for footer analysis
     begin_num_result_content: int = 2  # Compare first N results to determine general header layout
@@ -162,7 +163,7 @@ class TableAwareMergeService(BaseService):
             groups.append(
                 _CombinedResults(
                     results=cluster_items,
-                    text="\n".join(r.text for r in cluster_items).strip()
+                    text="\n".join(t.text for r in cluster_items for t in r).strip()
                 )
             )
 

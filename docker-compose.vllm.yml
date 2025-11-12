@@ -5,7 +5,7 @@ x-vllm-ocr-config: &vllm-ocr
   restart: unless-stopped
   volumes:
     - ocr_model:/root/.cache/huggingface
-  command: 
+  command:
     - '--model'
     - 'rednote-hilab/dots.ocr'
     - '--trust-remote-code'
@@ -39,31 +39,31 @@ networks:
     driver: bridge
 
 services:
-  ocr-1:
-    <<: *vllm-ocr
-    container_name: ocr-1
-    environment:
-      - NVIDIA_VISIBLE_DEVICES=0
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              device_ids: ["0"]
-              capabilities: [gpu]
-
-  # ocr-2:
+  # ocr-1:
   #   <<: *vllm-ocr
-  #   container_name: ocr-2
+  #   container_name: ocr-1
   #   environment:
-  #     - NVIDIA_VISIBLE_DEVICES=1
+  #     - NVIDIA_VISIBLE_DEVICES=0
   #   deploy:
   #     resources:
   #       reservations:
   #         devices:
   #           - driver: nvidia
-  #             device_ids: ["1"]
+  #             device_ids: ["0"]
   #             capabilities: [gpu]
+
+  ocr-2:
+    <<: *vllm-ocr
+    container_name: ocr-2
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=1
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["1"]
+              capabilities: [gpu]
 
   # ocr-3:
   #   <<: *vllm-ocr
@@ -77,7 +77,7 @@ services:
   #           - driver: nvidia
   #             device_ids: ["2"]
   #             capabilities: [gpu]
-  
+
   # ocr-4:
   #   <<: *vllm-ocr
   #   container_name: ocr-4
@@ -101,10 +101,10 @@ services:
     networks:
       - ocr_network
     depends_on:
-      ocr-1:
-        condition: service_healthy
-      # ocr-2:
+      # ocr-1:
       #   condition: service_healthy
+      ocr-2:
+        condition: service_healthy
       # ocr-3:
       #   condition: service_healthy
       # ocr-4:

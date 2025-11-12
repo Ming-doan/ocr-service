@@ -17,4 +17,4 @@ def zip_all_zip_files(src_dir: str, output_zip: str):
 
 if __name__ == "__main__":
     # example
-    zip_all_zip_files("output", "all_zips.zip")
+    zip_all_zip_files("output", "pdfs/all_zips.zip")
